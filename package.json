@@ -1,0 +1,50 @@
+{
+  "name": "cf-ai-watchdog",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Site health monitoring agent built on the Cloudflare Agents SDK",
+  "keywords": [
+    "agents",
+    "ai",
+    "cloudflare",
+    "security",
+    "monitoring"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "start": "vite dev",
+    "deploy": "vite build && wrangler deploy",
+    "types": "wrangler types env.d.ts --include-runtime false",
+    "format": "oxfmt --write .",
+    "lint": "oxlint src/",
+    "check": "oxfmt --check . && oxlint src/ && tsc"
+  },
+  "dependencies": {
+    "@cloudflare/ai-chat": "^0.1.9",
+    "@cloudflare/kumo": "^1.14.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "agents": "^0.7.9",
+    "ai": "^6.0.116",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "streamdown": "^2.2.0",
+    "workers-ai-provider": "^3.1.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.25.6",
+    "@cloudflare/workers-types": "^4.20260317.1",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.56.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "wrangler": "4.75.0"
+  }
+}
