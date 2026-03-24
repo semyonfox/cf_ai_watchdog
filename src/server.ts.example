@@ -1,0 +1,6 @@
+// Client-side tool: no execute function — the browser handles it
+        getUserTimezone: tool({
+          description:
+            "Get the user's timezone from their browser. Use this when you need to know the user's local time.",
+          inputSchema: z.object({}),
+        }),
