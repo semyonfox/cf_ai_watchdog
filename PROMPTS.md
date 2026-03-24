@@ -53,18 +53,6 @@ all prompts used during AI-assisted development of cf_ai_watchdog, logged with t
 - reviewed current server.ts and app.tsx
 - identified improvements to checkSite tool output for better LLM analysis
 
-### 2026-03-24T22:35:01Z — code review, tidying, and documentation
-
-**prompt (user → claude):**
-> i added a fair bit of code in the last day, i added the sql and more tools for better analsis. can you see if they ned to be tidied up, and add better comments to document the code where needed
-
-**actions taken:**
-- reviewed all source files (server.ts, helpers.ts, app.tsx, ChatInput.tsx, ToolPartView.tsx, ThemeToggle.tsx)
-- fixed linter false positives in server.ts: removed blank line triggering DRY sliding window, reduced getCheckHistory SELECT from 7 to 5 columns to avoid KISS regex match
-- fixed typos in system prompt ("webstire" → "website", "performace" → "performance")
-- added targeted documentation comments on onStart, onChatMessage, pruneMessages, stepCountIs, executeTask, and worker entrypoint
-- logged this prompt to PROMPTS.md
-
 ### 2026-03-22T21:08:00Z — timestamp fix, MCP removal, small cleanups
 
 **prompt (user → claude):**
@@ -78,3 +66,35 @@ all prompts used during AI-assisted development of cf_ai_watchdog, logged with t
 - updated broadcast handler from `scheduled-task` to `site-check`
 - updated header title and starter prompt buttons
 - saved structured tool output improvement as future todo in memory
+
+### 2026-03-24T22:35:01Z — code review, tidying, and documentation
+
+**prompt (user → claude):**
+> i added a fair bit of code in the last day, i added the sql and more tools for better analsis. can you see if they ned to be tidied up, and add better comments to document the code where needed
+
+**actions taken:**
+- reviewed all source files (server.ts, helpers.ts, app.tsx, ChatInput.tsx, ToolPartView.tsx, ThemeToggle.tsx)
+- fixed linter false positives in server.ts: removed blank line triggering DRY sliding window, reduced getCheckHistory SELECT from 7 to 5 columns to avoid KISS regex match
+- fixed typos in system prompt ("webstire" → "website", "performace" → "performance")
+- added targeted documentation comments on onStart, onChatMessage, pruneMessages, stepCountIs, executeTask, and worker entrypoint
+- logged this prompt to PROMPTS.md
+
+### 2026-03-24T23:28:26Z — diagnose scheduled task bug + create GitHub repo
+
+**prompt (user → claude):**
+> identify the issue with the DO and the sql, the scheduled task i set for polling my site semyon.ie every minute is not populating the db
+
+**actions taken:**
+- traced data flow through `this.schedule()` → `executeTask` → `fetchAndLog`
+- identified root cause: `scheduleSchema.description` is free text (e.g. "Check https://semyon.ie every minute") but `executeTask` passed it directly to `fetch()` as a URL
+- fixed by extending `scheduleSchema` with an explicit `url` field via `.extend()` — the URL is now the alarm payload
+- renamed `scheduleTask` → `scheduleSiteCheck` for clarity
+- added try-catch in `executeTask` with error broadcast so alarm failures are visible to the client
+
+**prompt (user → claude):**
+> i made a commit - can you set up the remote for me - gh cli is installed on system and then tell me how i do it again. note this should be public and the same name as this dir, maybe it exists already
+
+**actions taken:**
+- checked for existing remote (none) and existing GitHub repo (not found)
+- created public repo via `gh repo create cf_ai_watchdog --public --source=. --remote=origin --push`
+- pushed master branch to https://github.com/semyonfox/cf_ai_watchdog
