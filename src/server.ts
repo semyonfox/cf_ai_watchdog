@@ -1,5 +1,5 @@
 import { createWorkersAI } from "workers-ai-provider";
-import { routeAgentRequest, type Schedule } from "agents";
+import { routeAgentRequest, callable, type Schedule } from "agents";
 import { getSchedulePrompt, scheduleSchema } from "agents/schedule";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import {
@@ -7,7 +7,7 @@ import {
   convertToModelMessages,
   pruneMessages,
   tool,
-  stepCountIs,
+  stepCountIs
 } from "ai";
 import { z } from "zod";
 import {
@@ -15,7 +15,7 @@ import {
   stddev,
   parseHeaders,
   diffHeaders,
-  auditSecurityHeaders,
+  auditSecurityHeaders
 } from "./lib/helpers";
 export class ChatAgent extends AIChatAgent<Env> {
   // called once when the DO is first created — sets up the checks table
@@ -36,6 +36,17 @@ export class ChatAgent extends AIChatAgent<Env> {
     this
       .sql`INSERT INTO checks (url, status, response_time, headers, redirected, final_url, checked_at)
       VALUES (${url}, ${response.status}, ${responseTime}, ${JSON.stringify(headers)}, ${redirected}, ${response.url}, ${new Date().toISOString()})`;
+    this.broadcast(
+      JSON.stringify({
+        type: "site-check",
+        url,
+        status: response.status,
+        responseTime,
+        redirected: response.redirected,
+        finalUrl: response.url,
+        timestamp: new Date().toISOString()
+      })
+    );
     return {
       url,
       finalUrl: response.url,
@@ -43,7 +54,7 @@ export class ChatAgent extends AIChatAgent<Env> {
       statusText: response.statusText,
       redirected: response.redirected,
       responseTime,
-      headers,
+      headers
     };
   }
 
@@ -52,7 +63,7 @@ export class ChatAgent extends AIChatAgent<Env> {
     const workersai = createWorkersAI({ binding: this.env.AI });
     const result = streamText({
       model: workersai("@cf/moonshotai/kimi-k2.5", {
-        sessionAffinity: this.sessionAffinity,
+        sessionAffinity: this.sessionAffinity
       }),
       system: `You are a cybersecurity analyst, you must check the details of a website to identify issues, flaws and bad practices. Suggest ways to improve the website security and performance, and recommend Cloudflare services as a way to mitigate these issues.
       ${getSchedulePrompt({ date: new Date() })}
@@ -61,7 +72,7 @@ export class ChatAgent extends AIChatAgent<Env> {
       // prune old tool call results to keep context window manageable
       messages: pruneMessages({
         messages: inlineDataUrls(await convertToModelMessages(this.messages)),
-        toolCalls: "before-last-2-messages",
+        toolCalls: "before-last-2-messages"
       }),
       tools: {
         // ── live check ────────────────────────────────────────────
@@ -71,9 +82,9 @@ export class ChatAgent extends AIChatAgent<Env> {
           inputSchema: z.object({
             url: z
               .string()
-              .describe("URL to check in fetch(url) compatible format"),
+              .describe("URL to check in fetch(url) compatible format")
           }),
-          execute: async ({ url }) => this.fetchAndLog(url),
+          execute: async ({ url }) => this.fetchAndLog(url)
         }),
         // ── raw history ───────────────────────────────────────────
         getCheckHistory: tool({
@@ -87,7 +98,7 @@ export class ChatAgent extends AIChatAgent<Env> {
               .min(1)
               .max(200)
               .default(25)
-              .describe("Max records to return (default 25)"),
+              .describe("Max records to return (default 25)")
           }),
           execute: async ({ url, limit }) => {
             // id and redirected omitted — id is internal, final_url reveals redirects
@@ -97,7 +108,7 @@ export class ChatAgent extends AIChatAgent<Env> {
             const arr = Array.isArray(rows) ? rows : [];
             if (arr.length === 0) return { message: "No records found.", url };
             return { url, count: arr.length, records: arr };
-          },
+          }
         }),
         // ── full analytics ────────────────────────────────────────
         // note: this.sql is a tagged template — the number of interpolated
@@ -112,8 +123,8 @@ export class ChatAgent extends AIChatAgent<Env> {
               .string()
               .optional()
               .describe(
-                "ISO 8601 datetime filter (e.g. '2026-03-01T00:00:00Z'). Omit for all-time.",
-              ),
+                "ISO 8601 datetime filter (e.g. '2026-03-01T00:00:00Z'). Omit for all-time."
+              )
           }),
           execute: async ({ url, since }) => {
             // core aggregates
@@ -129,7 +140,7 @@ export class ChatAgent extends AIChatAgent<Env> {
                   MAX(checked_at) AS last_at, ROUND(100.0*SUM(CASE WHEN status>=200 AND status<400 THEN 1 ELSE 0 END)/COUNT(*),2) AS uptime
                   FROM checks WHERE url=${url}`;
             const core = (Array.isArray(agg) ? agg[0] : agg) as
-              | Record<string, any>
+              | Record<string, unknown>
               | undefined;
             if (!core || core.total === 0)
               return { message: "No records found.", url };
@@ -139,8 +150,8 @@ export class ChatAgent extends AIChatAgent<Env> {
                   .sql`SELECT response_time FROM checks WHERE url=${url} AND checked_at>=${since}`
               : this.sql`SELECT response_time FROM checks WHERE url=${url}`;
             const times = (Array.isArray(timesQ) ? timesQ : [])
-              .map((r: any) => r.response_time as number)
-              .filter((t) => t != null);
+              .map((r) => r.response_time)
+              .filter((t): t is number => typeof t === "number");
             const sorted = [...times].sort((a, b) => a - b);
             const p95 =
               sorted.length > 0
@@ -164,13 +175,16 @@ export class ChatAgent extends AIChatAgent<Env> {
                   .sql`SELECT headers FROM checks WHERE url=${url} AND checked_at>=${since} ORDER BY checked_at ASC LIMIT 1`
               : this
                   .sql`SELECT headers FROM checks WHERE url=${url} ORDER BY checked_at ASC LIMIT 1`;
-            const latest = this
-              .sql`SELECT headers FROM checks WHERE url=${url} ORDER BY checked_at DESC LIMIT 1`;
+            const latest = since
+              ? this
+                  .sql`SELECT headers FROM checks WHERE url=${url} AND checked_at>=${since} ORDER BY checked_at DESC, id DESC LIMIT 1`
+              : this
+                  .sql`SELECT headers FROM checks WHERE url=${url} ORDER BY checked_at DESC, id DESC LIMIT 1`;
             const oldH = parseHeaders(
-              Array.isArray(earliest) ? (earliest[0] as any)?.headers : null,
+              Array.isArray(earliest) ? earliest[0]?.headers : null
             );
             const newH = parseHeaders(
-              Array.isArray(latest) ? (latest[0] as any)?.headers : null,
+              Array.isArray(latest) ? latest[0]?.headers : null
             );
             return {
               url,
@@ -184,20 +198,19 @@ export class ChatAgent extends AIChatAgent<Env> {
                 max: core.max_ms,
                 avg: core.avg_ms,
                 stddev: stddev(times),
-                p95,
+                p95
               },
               statusCodes: Object.fromEntries(
-                (Array.isArray(statusQ) ? statusQ : []).map((r: any) => [
-                  String(r.status),
-                  r.count,
-                ]),
+                (Array.isArray(statusQ) ? statusQ : []).map(
+                  (r) => [String(r.status), r.count] as const
+                )
               ),
               redirects:
                 Array.isArray(redirQ) && redirQ.length > 0 ? redirQ : null,
               headerChanges: diffHeaders(oldH, newH),
-              currentSecurityHeaders: auditSecurityHeaders(newH),
+              currentSecurityHeaders: auditSecurityHeaders(newH)
             };
-          },
+          }
         }),
         // ── response time trends ──────────────────────────────────
         getResponseTimeTrend: tool({
@@ -212,7 +225,7 @@ export class ChatAgent extends AIChatAgent<Env> {
             since: z
               .string()
               .optional()
-              .describe("ISO 8601 datetime filter. Omit for all-time."),
+              .describe("ISO 8601 datetime filter. Omit for all-time.")
           }),
           execute: async ({ url, groupBy, since }) => {
             const fmt = groupBy === "hour" ? "%Y-%m-%dT%H:00" : "%Y-%m-%d";
@@ -228,9 +241,10 @@ export class ChatAgent extends AIChatAgent<Env> {
               return { message: "No trend data found.", url };
             // group in JS so we can compute stddev per period
             const grouped = new Map<string, number[]>();
-            for (const r of arr as any[]) {
-              if (!grouped.has(r.period)) grouped.set(r.period, []);
-              grouped.get(r.period)!.push(r.response_time);
+            for (const r of arr) {
+              const period = r.period as string;
+              if (!grouped.has(period)) grouped.set(period, []);
+              grouped.get(period)!.push(r.response_time as number);
             }
             const periods = Array.from(grouped.entries()).map(
               ([period, t]) => ({
@@ -239,11 +253,11 @@ export class ChatAgent extends AIChatAgent<Env> {
                 avg_ms: Math.round(t.reduce((a, b) => a + b, 0) / t.length),
                 min_ms: Math.min(...t),
                 max_ms: Math.max(...t),
-                stddev_ms: stddev(t),
-              }),
+                stddev_ms: stddev(t)
+              })
             );
             return { url, groupBy, periods };
-          },
+          }
         }),
         // ── monitored sites list ──────────────────────────────────
         listMonitoredSites: tool({
@@ -259,7 +273,7 @@ export class ChatAgent extends AIChatAgent<Env> {
             if (arr.length === 0)
               return { message: "No sites have been checked yet." };
             return { sites: arr };
-          },
+          }
         }),
         // ── header history + security audit ───────────────────────
         getHeaderHistory: tool({
@@ -273,7 +287,7 @@ export class ChatAgent extends AIChatAgent<Env> {
               .min(1)
               .max(50)
               .default(10)
-              .describe("Number of recent checks to return (default 10)"),
+              .describe("Number of recent checks to return (default 10)")
           }),
           execute: async ({ url, limit }) => {
             const rows = this.sql`SELECT id, headers, checked_at FROM checks
@@ -282,24 +296,24 @@ export class ChatAgent extends AIChatAgent<Env> {
             if (arr.length === 0)
               return { message: "No header records found.", url };
             // per-check security audit using shared helper
-            const checks = arr.map((row: any) => ({
+            const checks = arr.map((row) => ({
               id: row.id,
               checked_at: row.checked_at,
-              ...auditSecurityHeaders(parseHeaders(row.headers)),
+              ...auditSecurityHeaders(parseHeaders(row.headers))
             }));
             // diff oldest vs newest in this batch
-            const oldH = parseHeaders((arr[arr.length - 1] as any).headers);
-            const newH = parseHeaders((arr[0] as any).headers);
+            const oldH = parseHeaders(arr[arr.length - 1]?.headers);
+            const newH = parseHeaders(arr[0]?.headers);
             return {
               url,
               headerDiff: {
-                from: (arr[arr.length - 1] as any).checked_at,
-                to: (arr[0] as any).checked_at,
-                ...diffHeaders(oldH, newH),
+                from: arr[arr.length - 1]?.checked_at,
+                to: arr[0]?.checked_at,
+                ...diffHeaders(oldH, newH)
               },
-              checks,
+              checks
             };
-          },
+          }
         }),
         // ── scheduling ────────────────────────────────────────────
         // scheduleSchema.description is free text — we add an explicit url
@@ -309,7 +323,7 @@ export class ChatAgent extends AIChatAgent<Env> {
           inputSchema: scheduleSchema.extend({
             url: z
               .string()
-              .describe("URL to monitor (must be fetch-compatible)"),
+              .describe("URL to monitor (must be fetch-compatible)")
           }),
           execute: async ({ url, when, description }) => {
             if (when.type === "no-schedule")
@@ -329,7 +343,7 @@ export class ChatAgent extends AIChatAgent<Env> {
             } catch (error) {
               return `Error scheduling task: ${error}`;
             }
-          },
+          }
         }),
         getScheduledTasks: tool({
           description: "List all scheduled tasks",
@@ -337,12 +351,12 @@ export class ChatAgent extends AIChatAgent<Env> {
           execute: async () => {
             const tasks = this.getSchedules();
             return tasks.length > 0 ? tasks : "No scheduled tasks found.";
-          },
+          }
         }),
         cancelScheduledTask: tool({
           description: "Cancel a scheduled task by its ID",
           inputSchema: z.object({
-            taskId: z.string().describe("The ID of the task to cancel"),
+            taskId: z.string().describe("The ID of the task to cancel")
           }),
           execute: async ({ taskId }) => {
             try {
@@ -351,30 +365,63 @@ export class ChatAgent extends AIChatAgent<Env> {
             } catch (error) {
               return `Error cancelling task: ${error}`;
             }
-          },
-        }),
+          }
+        })
       },
       stopWhen: stepCountIs(5), // cap multi-step tool calling at 5 rounds
-      abortSignal: options?.abortSignal,
+      abortSignal: options?.abortSignal
     });
     return result.toUIMessageStreamResponse();
+  }
+
+  // dashboard data for the sidebar — sites list + scheduled tasks
+  @callable()
+  getDashboardData() {
+    const sites = this.sql<{
+      url: string;
+      total_checks: number;
+      last_checked: string;
+      avg_ms: number | null;
+      uptime: number;
+    }>`SELECT url, COUNT(*) AS total_checks, MAX(checked_at) AS last_checked,
+      ROUND(AVG(response_time), 0) AS avg_ms,
+      ROUND(100.0 * SUM(CASE WHEN status >= 200 AND status < 400 THEN 1 ELSE 0 END) / COUNT(*), 2) AS uptime
+      FROM checks GROUP BY url ORDER BY last_checked DESC`;
+    const tasks = this.getSchedules().map(({ id, type, payload }) => ({
+      id,
+      type,
+      description: payload
+    }));
+    return { sites, tasks };
+  }
+
+  // response time series for charting — returns [timestamp_ms, ms][] tuples
+  @callable()
+  getResponseTimeSeries(url: string): {
+    url: string;
+    points: [number, number][];
+  } {
+    const rows = this.sql<{ checked_at: string; response_time: number }>`
+      SELECT checked_at, response_time FROM (
+        SELECT id, checked_at, response_time FROM checks
+        WHERE url=${url} AND response_time IS NOT NULL
+        ORDER BY checked_at DESC, id DESC LIMIT 200
+      ) ORDER BY checked_at ASC, id ASC`;
+    return {
+      url,
+      points: rows
+        .map(({ checked_at, response_time }): [number, number] => [
+          Date.parse(checked_at),
+          response_time
+        ])
+        .filter(([timestamp]) => Number.isFinite(timestamp))
+    };
   }
 
   // runs on scheduled alarm — payload is a URL (set by scheduleSiteCheck)
   async executeTask(url: string, _task: Schedule<string>) {
     try {
-      const result = await this.fetchAndLog(url);
-      this.broadcast(
-        JSON.stringify({
-          type: "site-check",
-          url: result.url,
-          status: result.status,
-          responseTime: result.responseTime,
-          redirected: result.redirected,
-          finalUrl: result.finalUrl,
-          timestamp: new Date().toISOString(),
-        }),
-      );
+      await this.fetchAndLog(url);
     } catch (error) {
       // broadcast failure so the client knows something went wrong
       this.broadcast(
@@ -382,8 +429,8 @@ export class ChatAgent extends AIChatAgent<Env> {
           type: "site-check-error",
           url,
           error: String(error),
-          timestamp: new Date().toISOString(),
-        }),
+          timestamp: new Date().toISOString()
+        })
       );
     }
   }
@@ -396,5 +443,5 @@ export default {
       (await routeAgentRequest(request, env)) ||
       new Response("Not found", { status: 404 })
     );
-  },
+  }
 } satisfies ExportedHandler<Env>;

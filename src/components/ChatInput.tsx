@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Button, InputArea } from "@cloudflare/kumo";
 import {
   PaperPlaneRightIcon,
@@ -22,8 +22,11 @@ interface Attachment {
 function fileToDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Image could not be read"));
+    };
+    reader.onerror = () => reject(new Error("Image could not be read"));
     reader.readAsDataURL(file);
   });
 }
@@ -34,7 +37,10 @@ type AttachmentAction =
   | { kind: "remove"; id: string }
   | { kind: "clear" };
 
-function attachmentReducer(state: Attachment[], action: AttachmentAction): Attachment[] {
+function attachmentReducer(
+  state: Attachment[],
+  action: AttachmentAction
+): Attachment[] {
   switch (action.kind) {
     case "add": {
       const images = action.files.filter((f) => f.type.startsWith("image/"));
@@ -68,63 +74,101 @@ export function ChatInput({
 }: {
   connected: boolean;
   isStreaming: boolean;
-  onSend: (parts: MessagePart[]) => void;
+  onSend: (parts: MessagePart[]) => Promise<void>;
   onStop: () => void;
 }) {
   const [input, setInput] = useState("");
   const [attachments, dispatch] = useReducer(attachmentReducer, []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      const files: File[] = [];
-      for (const item of items) {
-        if (item.kind === "file") {
-          const file = item.getAsFile();
-          if (file) files.push(file);
-        }
-      }
-      if (files.length > 0) {
-        e.preventDefault();
-        dispatch({ kind: "add", files });
-      }
+  const formRef = useRef<HTMLFormElement>(null);
+  const hintRef = useRef<HTMLOutputElement>(null);
+  const sendingRef = useRef(false);
+  const connectedRef = useRef(connected);
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const busy = isStreaming || sending;
+  const attachmentsRef = useRef<Attachment[]>([]);
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+  useEffect(
+    () => () => {
+      for (const attachment of attachmentsRef.current)
+        URL.revokeObjectURL(attachment.preview);
     },
     []
   );
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const item of items) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      dispatch({ kind: "add", files });
+    }
+  }, []);
+
   const send = useCallback(async () => {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || isStreaming) return;
-    setInput("");
-    const parts: MessagePart[] = [];
-    if (text) parts.push({ type: "text", text });
-    for (const att of attachments) {
-      const url = await fileToDataUri(att.file);
-      parts.push({ type: "file", mediaType: att.mediaType, url });
+    if (
+      (!text && attachments.length === 0) ||
+      isStreaming ||
+      sendingRef.current ||
+      !connectedRef.current
+    )
+      return;
+    sendingRef.current = true;
+    setSending(true);
+    setSendError(null);
+    try {
+      const parts: MessagePart[] = [];
+      if (text) parts.push({ type: "text", text });
+      for (const att of attachments) {
+        const url = await fileToDataUri(att.file);
+        parts.push({ type: "file", mediaType: att.mediaType, url });
+      }
+      if (!connectedRef.current) throw new Error("Connection lost");
+      await onSend(parts);
+      setInput("");
+      dispatch({ kind: "clear" });
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+    } catch {
+      setSendError(
+        "The request did not finish. Your draft is saved here. Check the conversation before sending it again."
+      );
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+      requestAnimationFrame(() => {
+        if (
+          formRef.current?.contains(document.activeElement) ||
+          document.activeElement === document.body
+        )
+          textareaRef.current?.focus();
+      });
     }
-    dispatch({ kind: "clear" });
-    onSend(parts);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [input, attachments, isStreaming, onSend]);
 
-  // re-focus input after streaming ends
-  const prevStreaming = useRef(isStreaming);
-  if (prevStreaming.current && !isStreaming && textareaRef.current) {
-    textareaRef.current.focus();
-  }
-  prevStreaming.current = isStreaming;
-
   return (
-    <div className="border-t border-kumo-line bg-kumo-base">
+    <div className="shrink-0 border-t border-kumo-line bg-kumo-base">
       <form
+        ref={formRef}
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
-        className="max-w-3xl mx-auto px-5 py-4"
+        className="max-w-3xl mx-auto px-3 sm:px-5 py-3"
       >
         <input
           ref={fileInputRef}
@@ -133,7 +177,8 @@ export function ChatInput({
           accept="image/*"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files) dispatch({ kind: "add", files: [...e.target.files] });
+            if (e.target.files)
+              dispatch({ kind: "add", files: [...e.target.files] });
             e.target.value = "";
           }}
         />
@@ -151,11 +196,25 @@ export function ChatInput({
                 />
                 <button
                   type="button"
-                  onClick={() => dispatch({ kind: "remove", id: att.id })}
-                  className="absolute top-0.5 right-0.5 rounded-full bg-kumo-contrast/80 text-kumo-inverse p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  disabled={busy}
+                  onClick={() => {
+                    dispatch({ kind: "remove", id: att.id });
+                    requestAnimationFrame(() => {
+                      if (connectedRef.current) textareaRef.current?.focus();
+                      else {
+                        const next =
+                          formRef.current?.querySelector<HTMLButtonElement>(
+                            'button[aria-label^="Remove "]'
+                          );
+                        if (next) next.focus();
+                        else hintRef.current?.focus();
+                      }
+                    });
+                  }}
+                  className="absolute top-0 right-0 rounded-full bg-kumo-contrast/80 text-kumo-inverse p-2 focus-visible:ring-2 focus-visible:ring-kumo-ring"
                   aria-label={`Remove ${att.file.name}`}
                 >
-                  <XIcon size={10} />
+                  <XIcon size={16} />
                 </button>
               </div>
             ))}
@@ -169,15 +228,22 @@ export function ChatInput({
             aria-label="Attach images"
             icon={<PaperclipIcon size={18} />}
             onClick={() => fileInputRef.current?.click()}
-            disabled={!connected || isStreaming}
-            className="mb-0.5"
+            disabled={!connected || busy}
+            className="mb-0.5 min-h-11 min-w-11"
           />
           <InputArea
             ref={textareaRef}
             value={input}
+            aria-label="Message to Site Watchdog"
+            aria-describedby="composer-hint"
             onValueChange={setInput}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                e.keyCode !== 229
+              ) {
                 e.preventDefault();
                 send();
               }
@@ -191,11 +257,11 @@ export function ChatInput({
             placeholder={
               attachments.length > 0
                 ? "Add a message or send images..."
-                : "Send a message..."
+                : "URL or question..."
             }
-            disabled={!connected || isStreaming}
+            disabled={!connected || busy}
             rows={1}
-            className="flex-1 ring-0! focus:ring-0! shadow-none! bg-transparent! outline-none! resize-none max-h-40"
+            className="min-w-0 flex-1 text-base sm:text-sm ring-0! focus:ring-0! shadow-none! bg-transparent! outline-none! resize-none max-h-40"
           />
           {isStreaming ? (
             <Button
@@ -205,7 +271,7 @@ export function ChatInput({
               aria-label="Stop generation"
               icon={<StopIcon size={18} />}
               onClick={onStop}
-              className="mb-0.5"
+              className="mb-0.5 min-h-11 min-w-11"
             />
           ) : (
             <Button
@@ -214,13 +280,34 @@ export function ChatInput({
               shape="square"
               aria-label="Send message"
               disabled={
-                (!input.trim() && attachments.length === 0) || !connected
+                (!input.trim() && attachments.length === 0) ||
+                !connected ||
+                sending
               }
               icon={<PaperPlaneRightIcon size={18} />}
-              className="mb-0.5"
+              className="mb-0.5 min-h-11 min-w-11"
             />
           )}
         </div>
+        <output
+          ref={hintRef}
+          tabIndex={-1}
+          id="composer-hint"
+          className="block mt-2 text-xs text-kumo-secondary"
+        >
+          {!connected
+            ? "Reconnecting. Your draft stays here until the connection returns."
+            : isStreaming
+              ? "Request in progress. Use Stop to end the response."
+              : sending
+                ? "Preparing request..."
+                : "Enter to send, Shift+Enter for a new line. Images can be attached or pasted."}
+        </output>
+        {sendError && (
+          <p role="alert" className="mt-2 text-sm text-kumo-danger">
+            {sendError}
+          </p>
+        )}
       </form>
     </div>
   );
