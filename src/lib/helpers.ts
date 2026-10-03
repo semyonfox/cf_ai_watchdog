@@ -17,7 +17,7 @@ export function inlineDataUrls(messages: ModelMessage[]): ModelMessage[] {
         if (!match) return part;
         const bytes = Uint8Array.from(atob(match[2]), (c) => c.charCodeAt(0));
         return { ...part, data: bytes, mediaType: match[1] };
-      }),
+      })
     };
   });
 }
@@ -33,15 +33,20 @@ export function stddev(values: number[]): number {
 
 /** safely parse a JSON headers string into a key-value Record */
 export function parseHeaders(raw: unknown): Record<string, string> {
-  if (typeof raw === "object" && raw !== null) return raw as Record<string, string>;
+  if (typeof raw === "object" && raw !== null)
+    return raw as Record<string, string>;
   if (typeof raw !== "string") return {};
-  try { return JSON.parse(raw); } catch { return {}; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
 
 /** diff two header objects → added, removed, and changed keys */
 export function diffHeaders(
   older: Record<string, string>,
-  newer: Record<string, string>,
+  newer: Record<string, string>
 ) {
   const added: Record<string, string> = {};
   const removed: Record<string, string> = {};
