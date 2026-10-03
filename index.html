@@ -11,7 +11,10 @@
     <link rel="icon" href="/favicon.ico" />
     <script>
       (() => {
-        const mode = localStorage.getItem("theme") || "light";
+        let mode = "light";
+        try {
+          mode = localStorage.getItem("theme") || "light";
+        } catch {}
         document.documentElement.setAttribute("data-mode", mode);
         document.documentElement.style.colorScheme = mode;
       })();

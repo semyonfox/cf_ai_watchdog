@@ -113,10 +113,15 @@ export function ChatInput({
         if (file) files.push(file);
       }
     }
-    if (files.length > 0) {
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    if (images.length > 0) {
       e.preventDefault();
-      dispatch({ kind: "add", files });
+      dispatch({ kind: "add", files: images });
     }
+    if (images.length < files.length)
+      setSendError(
+        "Only images can be attached. Other pasted files were not added."
+      );
   }, []);
 
   const send = useCallback(async () => {
@@ -155,7 +160,8 @@ export function ChatInput({
           formRef.current?.contains(document.activeElement) ||
           document.activeElement === document.body
         )
-          textareaRef.current?.focus();
+          if (connectedRef.current) textareaRef.current?.focus();
+          else hintRef.current?.focus();
       });
     }
   }, [input, attachments, isStreaming, onSend]);
@@ -177,14 +183,20 @@ export function ChatInput({
           accept="image/*"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files)
-              dispatch({ kind: "add", files: [...e.target.files] });
+            if (e.target.files) {
+              const files = [...e.target.files];
+              dispatch({ kind: "add", files });
+              if (files.some((file) => !file.type.startsWith("image/")))
+                setSendError(
+                  "Only images can be attached. Other files were not added."
+                );
+            }
             e.target.value = "";
           }}
         />
         {attachments.length > 0 && (
           <div className="flex gap-2 mb-2 flex-wrap">
-            {attachments.map((att) => (
+            {attachments.map((att, index) => (
               <div
                 key={att.id}
                 className="relative group rounded-lg border border-kumo-line bg-kumo-control overflow-hidden"
@@ -211,8 +223,8 @@ export function ChatInput({
                       }
                     });
                   }}
-                  className="absolute top-0 right-0 rounded-full bg-kumo-contrast/80 text-kumo-inverse p-2 focus-visible:ring-2 focus-visible:ring-kumo-ring"
-                  aria-label={`Remove ${att.file.name}`}
+                  className="absolute min-h-11 min-w-11 top-0 right-0 rounded-full bg-kumo-contrast/80 text-kumo-inverse p-2 focus-visible:ring-2 focus-visible:ring-kumo-ring"
+                  aria-label={`Remove image ${index + 1}: ${att.file.name}`}
                 >
                   <XIcon size={16} />
                 </button>
@@ -290,11 +302,15 @@ export function ChatInput({
           )}
         </div>
         <output
+          aria-atomic="true"
           ref={hintRef}
           tabIndex={-1}
           id="composer-hint"
           className="block mt-2 text-xs text-kumo-secondary"
         >
+          {attachments.length > 0
+            ? `${attachments.length} image${attachments.length === 1 ? "" : "s"} attached. `
+            : "No images attached. "}
           {!connected
             ? "Reconnecting. Your draft stays here until the connection returns."
             : isStreaming

@@ -7,6 +7,7 @@ import {
   ChartLineUpIcon
 } from "@phosphor-icons/react";
 import { ResponseTimeChart } from "./ResponseTimeChart";
+import { telemetry } from "../lib/telemetry";
 
 const dashboardSchema = z.object({
   sites: z.array(
@@ -93,10 +94,10 @@ export function DashboardPanel({
             ? current
             : (result.sites[0]?.url ?? null)
         );
-      } catch (e) {
+      } catch {
         if (!cancelled) {
           setDashboardErrorRevision(refreshKey);
-          console.error("dashboard fetch failed:", e);
+          telemetry.error("request_failed", "dashboard");
         }
       }
     }
@@ -119,11 +120,11 @@ export function DashboardPanel({
           setChartError(null);
         }
       })
-      .catch((e) => {
+      .catch(() => {
         if (!cancelled) {
           setChart(null);
           setChartError({ url: selectedUrl, revision: refreshKey });
-          console.error("chart fetch failed:", e);
+          telemetry.error("request_failed", "dashboard");
         }
       });
     return () => {
@@ -166,14 +167,21 @@ export function DashboardPanel({
           </Button>
         </div>
       </div>
-      <output className="block px-4 pt-3 text-xs text-kumo-secondary">
+      <output
+        aria-atomic="true"
+        className="block px-4 pt-3 text-xs text-kumo-secondary"
+      >
         {dashboardLoading
           ? "Updating dashboard..."
           : dashboardFailed
             ? data
               ? "Could not refresh. Showing the previous snapshot."
               : "Dashboard unavailable. Try loading it again."
-            : "Select a site to inspect its recorded checks."}
+            : chartLoading
+              ? "Loading response times..."
+              : chartFailed
+                ? "Response times unavailable. Use Retry dashboard."
+                : "Dashboard ready. Select a site to inspect its recorded checks."}
       </output>
       {(dashboardFailed || chartFailed) && (
         <Button
@@ -188,7 +196,7 @@ export function DashboardPanel({
       {/* chart section */}
       <div className="px-4 pt-4 pb-2">
         <div className="mb-2">
-          <Text size="xs" variant="secondary" bold>
+          <Text size="xs" variant="secondary" bold as="h3">
             Response Time
           </Text>
         </div>
@@ -226,7 +234,7 @@ export function DashboardPanel({
         </p>
       )}
       {selected && (
-        <div className="px-4 py-3 grid grid-cols-3 gap-2">
+        <div className="px-4 py-3 grid grid-cols-[repeat(auto-fit,minmax(5rem,1fr))] gap-2">
           <Surface className="px-2 py-1.5 rounded-lg ring ring-kumo-line text-center">
             <Text size="xs" variant="secondary">
               Uptime
@@ -258,7 +266,7 @@ export function DashboardPanel({
       <div className="px-4 py-3 border-t border-kumo-line">
         <div className="flex items-center gap-2 mb-2">
           <GlobeIcon size={14} className="text-kumo-inactive" />
-          <Text size="xs" variant="secondary" bold>
+          <Text size="xs" variant="secondary" bold as="h3">
             Monitored Sites
           </Text>
         </div>
@@ -287,7 +295,7 @@ export function DashboardPanel({
                 <span className="block [overflow-wrap:anywhere]">
                   {site.url}
                 </span>
-                <span className="text-xs text-kumo-inactive">
+                <span className="text-xs text-kumo-secondary">
                   {site.total_checks} checks · {site.avg_ms ?? "—"}ms avg
                 </span>
               </button>
@@ -300,7 +308,7 @@ export function DashboardPanel({
       <div className="px-4 py-3 border-t border-kumo-line">
         <div className="flex items-center gap-2 mb-2">
           <ClockCountdownIcon size={14} className="text-kumo-inactive" />
-          <Text size="xs" variant="secondary" bold>
+          <Text size="xs" variant="secondary" bold as="h3">
             Scheduled Tasks
           </Text>
         </div>

@@ -10,3 +10,18 @@ body,
   height: 100%;
   margin: 0;
 }
+
+:where(button, summary, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-kumo-ring, currentColor);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

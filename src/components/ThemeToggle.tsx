@@ -13,7 +13,11 @@ export function ThemeToggle() {
     const mode = next ? "dark" : "light";
     document.documentElement.setAttribute("data-mode", mode);
     document.documentElement.style.colorScheme = mode;
-    localStorage.setItem("theme", mode);
+    try {
+      localStorage.setItem("theme", mode);
+    } catch {
+      /* theme remains usable without storage */
+    }
   }, [dark]);
 
   return (
@@ -22,7 +26,8 @@ export function ThemeToggle() {
       shape="square"
       icon={dark ? <SunIcon size={16} /> : <MoonIcon size={16} />}
       onClick={toggle}
-      aria-label="Toggle theme"
+      aria-label={dark ? "Use light theme" : "Use dark theme"}
+      className="min-h-11 min-w-11"
     />
   );
 }
