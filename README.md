@@ -64,15 +64,15 @@ directly via the Agents SDK's `callable` pattern.
 
 ## Stack
 
-| Layer | Tech |
-|-------|------|
-| Runtime | Cloudflare Workers + Durable Objects |
-| AI | Workers AI via `workers-ai-provider` + Vercel AI SDK |
-| Agent framework | `agents` (Cloudflare Agents SDK) |
-| Frontend | React 19, `@cloudflare/kumo`, Tailwind CSS v4 |
-| Storage | DO built-in SQLite |
-| Charts | ECharts via Kumo's `TimeseriesChart` |
-| Tooling | Vite 7, TypeScript 5.9, oxlint, oxfmt |
+| Layer           | Tech                                                 |
+| --------------- | ---------------------------------------------------- |
+| Runtime         | Cloudflare Workers + Durable Objects                 |
+| AI              | Workers AI via `workers-ai-provider` + Vercel AI SDK |
+| Agent framework | `agents` (Cloudflare Agents SDK)                     |
+| Frontend        | React 19, `@cloudflare/kumo`, Tailwind CSS v4        |
+| Storage         | DO built-in SQLite                                   |
+| Charts          | ECharts via Kumo's `TimeseriesChart`                 |
+| Tooling         | Vite 7, TypeScript 5.9, oxlint, oxfmt                |
 
 ## Setup
 
@@ -131,16 +131,16 @@ src/
 
 ## Tools the agent has access to
 
-| Tool | What it does |
-|------|--------------|
-| `checkSite` | Fetch + time + log to SQLite |
-| `getSiteAnalytics` | Aggregated stats, uptime %, security audit |
-| `getCheckHistory` | Raw check records for a URL |
-| `getResponseTimeTrend` | Time-bucketed response time data |
-| `listMonitoredSites` | All checked URLs with counts |
-| `getHeaderHistory` | Security header changes over time |
-| `scheduleSiteCheck` | Create recurring/delayed check via DO alarm |
-| `getScheduledTasks` / `cancelScheduledTask` | Manage scheduled work |
+| Tool                                        | What it does                                |
+| ------------------------------------------- | ------------------------------------------- |
+| `checkSite`                                 | Fetch + time + log to SQLite                |
+| `getSiteAnalytics`                          | Aggregated stats, uptime %, security audit  |
+| `getCheckHistory`                           | Raw check records for a URL                 |
+| `getResponseTimeTrend`                      | Time-bucketed response time data            |
+| `listMonitoredSites`                        | All checked URLs with counts                |
+| `getHeaderHistory`                          | Security header changes over time           |
+| `scheduleSiteCheck`                         | Create recurring/delayed check via DO alarm |
+| `getScheduledTasks` / `cancelScheduledTask` | Manage scheduled work                       |
 
 ## License
 
