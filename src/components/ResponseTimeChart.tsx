@@ -49,6 +49,7 @@ export function ResponseTimeChart({
             color: ChartPalette.categorical(0, isDarkMode)
           }
         ]}
+        xAxisTickCount={3}
         yAxisName="ms"
         tooltipValueFormat={(v) => `${v}ms`}
         isDarkMode={isDarkMode}
